@@ -129,3 +129,23 @@
   -moz-user-select: none;
   -ms-user-select: none;
 }
+
+/* Ensure drag layer works properly */
+[data-rbd-drag-handle-draggable-id] {
+  cursor: grab !important;
+}
+
+[data-rbd-drag-handle-draggable-id]:active {
+  cursor: grabbing !important;
+}
+
+/* Fix z-index for drag operations */
+.react-dnd-dragging {
+  z-index: 9999 !important;
+}
+
+/* Prevent transform issues on parent containers */
+.game-container {
+  will-change: auto;
+  transform: none;
+}

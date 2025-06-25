@@ -141,7 +141,7 @@ export const GamePage: React.FC = () => {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col">
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col game-container">
         <GameNavigation />
         <div className="flex-1 flex flex-col p-4">
           {/* Game Header */}

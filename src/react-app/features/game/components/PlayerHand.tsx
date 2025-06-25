@@ -1,6 +1,5 @@
 import React from 'react';
 import { useDrag } from 'react-dnd';
-import { motion } from 'framer-motion';
 import { GameCard } from './GameCard';
 import { Card } from '../../../../game/models/Unit';
 import { useGameStore } from '../../../store/gameStore';
@@ -14,34 +13,29 @@ interface DraggableCardProps {
 const DraggableCard: React.FC<DraggableCardProps> = ({ card, index }) => {
   const { selectCard, hoverCard, canPlayCard, selectedCard, hoveredCard } = useGameStore();
   
-  const [{ isDragging }, drag] = useDrag({
+  const canDrag = canPlayCard();
+  console.log('Can drag card:', canDrag, 'Card ID:', card.id);
+  
+  const [{ isDragging }, drag] = useDrag(() => ({
     type: 'card',
     item: { cardId: card.id, sourceIndex: index, sourceType: 'hand' },
-    canDrag: () => canPlayCard(),
+    canDrag: () => canDrag,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  });
+  }), [card.id, index, canDrag]);
 
   return (
-    <motion.div
+    <div
       ref={drag as any}
       className={cn(
-        'cursor-pointer transition-all',
+        'transition-all transform-gpu',
         isDragging && 'opacity-50',
-        !canPlayCard() && 'opacity-60 cursor-not-allowed'
+        canPlayCard() ? 'cursor-grab active:cursor-grabbing' : 'opacity-60 cursor-not-allowed',
+        hoveredCard?.id === card.id && '-translate-y-5'
       )}
-      initial={{ scale: 0, rotate: -180 }}
-      animate={{ 
-        scale: 1, 
-        rotate: 0,
-        y: hoveredCard?.id === card.id ? -20 : 0,
-      }}
-      transition={{ 
-        type: 'spring',
-        stiffness: 200,
-        damping: 20,
-        delay: index * 0.1,
+      style={{
+        transform: hoveredCard?.id === card.id ? 'translateY(-20px)' : 'translateY(0)',
       }}
     >
       <GameCard
@@ -54,7 +48,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, index }) => {
         onHoverEnd={() => hoverCard(null)}
         isDraggable={canPlayCard()}
       />
-    </motion.div>
+    </div>
   );
 };
 

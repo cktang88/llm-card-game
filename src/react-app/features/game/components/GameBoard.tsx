@@ -1,6 +1,5 @@
 import React from 'react';
 import { useDrop, useDrag } from 'react-dnd';
-import { motion } from 'framer-motion';
 import { GameCard } from './GameCard';
 import { Unit } from '../../../../game/models/Unit';
 import { cn } from '@/lib/utils';
@@ -20,22 +19,22 @@ const DraggableUnit: React.FC<DraggableUnitProps> = ({ unit, index, row, isPlaye
   // Units can be dragged from reinforcement row to front line if delay is satisfied
   const canDrag = isPlayerBoard && row === 'reinforcement' && canDeployUnit(index);
   
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag] = useDrag(() => ({
     type: 'unit',
     item: { unitId: unit.id, sourceIndex: index, sourceRow: row },
     canDrag: () => canDrag,
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-  });
+  }), [unit.id, index, row, canDrag]);
 
   return (
     <div
-      ref={canDrag ? (drag as any) : undefined}
+      ref={canDrag ? (drag as any) : null}
       className={cn(
-        "absolute inset-0",
+        "w-full h-full",
         isDragging && 'opacity-50',
-        canDrag && 'cursor-move'
+        canDrag && 'cursor-grab active:cursor-grabbing'
       )}
     >
       <GameCard
@@ -64,9 +63,10 @@ interface BoardSlotProps {
 const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, onDrop }) => {
   const { selectFrontLineSlot, selectReinforcementSlot } = useGameStore();
   
-  const [{ isOver, canDrop }, drop] = useDrop({
+  const [{ isOver, canDrop }, drop] = useDrop(() => ({
     accept: ['card', 'unit'],
     drop: (item: any) => {
+      console.log('Drop detected:', item, 'at slot:', index, 'row:', row);
       if (onDrop) {
         if (item.cardId) {
           // Card from hand
@@ -94,7 +94,7 @@ const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, 
       isOver: !!monitor.isOver(),
       canDrop: !!monitor.canDrop(),
     }),
-  });
+  }), [onDrop, isPlayerBoard, row, unit, index]);
 
   const handleClick = () => {
     if (!isPlayerBoard) return;
@@ -107,17 +107,16 @@ const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, 
   };
 
   return (
-    <motion.div
+    <div
       ref={drop as any}
       className={cn(
         'relative w-36 h-48 rounded-lg border-2 border-dashed transition-all',
         isOver && canDrop && 'border-green-500 bg-green-500/10',
         isOver && !canDrop && 'border-red-500 bg-red-500/10',
         !isOver && 'border-gray-600 bg-gray-800/30',
-        'flex items-center justify-center'
+        'flex items-center justify-center hover:scale-[1.02]'
       )}
       onClick={handleClick}
-      whileHover={{ scale: 1.02 }}
     >
       {unit ? (
         <DraggableUnit
@@ -133,7 +132,7 @@ const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, 
         </div>
       )}
       
-    </motion.div>
+    </div>
   );
 };
 
