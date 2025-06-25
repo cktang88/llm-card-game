@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Card, Unit, getUnitPower } from '../../../../game/models/Unit';
 import { cn } from '@/lib/utils';
 import { Flame, Heart, Brain, Clock } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface GameCardProps {
   card?: Card;
@@ -25,7 +26,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   onClick,
   onHover,
   onHoverEnd,
-  isDraggable: _isDraggable,
+  isDraggable,
   isSelected,
   isHovered,
   isFaceDown = false,
@@ -115,26 +116,29 @@ export const GameCard: React.FC<GameCardProps> = ({
   }
 
   return (
-    <motion.div
-      className={cn(
-        'relative rounded-lg bg-gradient-to-br from-gray-900 to-black border-2 shadow-xl overflow-hidden cursor-pointer select-none',
-        sizeClasses[size],
-        isSelected && 'border-yellow-500',
-        isHovered && 'border-blue-400',
-        data.delay >= 3 && 'border-orange-600',
-        data.delay === 4 && 'border-red-600',
-        className
-      )}
-      onClick={onClick}
-      onMouseEnter={onHover}
-      onMouseLeave={onHoverEnd}
-      whileHover={{ scale: 1.1, zIndex: 50 }}
-      whileTap={{ scale: 0.95 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      style={{
-        backgroundImage: `linear-gradient(to bottom right, rgba(0,0,0,0.8), rgba(0,0,0,0.9))`,
-      }}
-    >
+    <TooltipProvider delayDuration={750}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <motion.div
+            className={cn(
+              'relative rounded-lg bg-gradient-to-br from-gray-900 to-black border-2 shadow-xl overflow-hidden cursor-pointer select-none',
+              sizeClasses[size],
+              isSelected && 'border-yellow-500',
+              isHovered && 'border-blue-400',
+              data.delay >= 3 && 'border-orange-600',
+              data.delay === 4 && 'border-red-600',
+              className
+            )}
+            onClick={onClick}
+            onMouseEnter={onHover}
+            onMouseLeave={onHoverEnd}
+            whileHover={{ scale: 1.1, zIndex: 50 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+            style={{
+              backgroundImage: `linear-gradient(to bottom right, rgba(0,0,0,0.8), rgba(0,0,0,0.9))`,
+            }}
+          >
       {/* Card Name */}
       <div className="absolute top-0 left-0 right-0 bg-black/50 backdrop-blur-sm px-2 py-1">
         <h3 className="font-bold text-white truncate">{data.name}</h3>
@@ -212,6 +216,22 @@ export const GameCard: React.FC<GameCardProps> = ({
           )}
         </div>
       )}
-    </motion.div>
+          </motion.div>
+        </TooltipTrigger>
+        {data.abilities.length > 0 && (
+          <TooltipContent side="right" className="max-w-xs">
+            <div className="space-y-2">
+              <h4 className="font-bold text-sm">{data.name}</h4>
+              {data.abilities.map((ability, index) => (
+                <div key={index} className="text-xs">
+                  <span className="font-semibold capitalize">{ability.type} - {ability.name}:</span>
+                  <p className="text-gray-300 mt-1">{ability.description}</p>
+                </div>
+              ))}
+            </div>
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
   );
 };
