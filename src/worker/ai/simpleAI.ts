@@ -47,7 +47,7 @@ export class SimpleAI {
     // Check if we can deploy units from reinforcement to front line
     const readyUnits: { unit: Unit; index: number }[] = [];
     aiPlayer.reinforcementRow.forEach((unit, index) => {
-      if (unit && unit.delay === 0) {
+      if (unit && unit.turnsInReserve >= unit.delay) {
         readyUnits.push({ unit, index });
       }
     });
@@ -56,21 +56,26 @@ export class SimpleAI {
       const availableFrontSlots = this.getAvailableFrontLineSlots(aiPlayer.frontLine);
       
       if (availableFrontSlots.length > 0) {
-        // Deploy the strongest ready unit to center if available, otherwise first available
+        // Deploy the first ready unit to the best available position
+        // Prioritize center (slot 2), then flanks closer to center
+        const prioritySlots = [2, 1, 3, 0, 4];
         const unitToDeploy = readyUnits[0];
-        const targetSlot = availableFrontSlots.includes(2) ? 2 : availableFrontSlots[0];
         
-        console.log(`[AI] Deploying unit ${unitToDeploy.unit.name} to front line slot ${targetSlot}`);
-        
-        return {
-          type: 'deployUnit',
-          playerId: aiPlayerId,
-          data: {
-            reinforcementSlot: unitToDeploy.index,
-            frontLineSlot: targetSlot
-          },
-          timestamp: new Date()
-        };
+        for (const slot of prioritySlots) {
+          if (availableFrontSlots.includes(slot)) {
+            console.log(`[AI] Deploying unit ${unitToDeploy.unit.name} to front line slot ${slot}`);
+            
+            return {
+              type: 'deployUnit',
+              playerId: aiPlayerId,
+              data: {
+                reinforcementSlot: unitToDeploy.index,
+                frontLineSlot: slot
+              },
+              timestamp: new Date()
+            };
+          }
+        }
       }
     }
     

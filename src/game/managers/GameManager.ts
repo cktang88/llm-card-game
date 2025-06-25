@@ -80,11 +80,8 @@ export class GameManager {
 
   private deployUnit(reinforcementSlot: number, frontLineSlot?: number): boolean {
     const currentPlayer = getCurrentPlayer(this.gameState);
-    
-    if (currentPlayer.hasDeployedThisTurn) return false;
 
     if (BoardManager.deployUnit(currentPlayer, reinforcementSlot, frontLineSlot)) {
-      currentPlayer.hasDeployedThisTurn = true;
       this.gameState.updatedAt = new Date();
       return true;
     }

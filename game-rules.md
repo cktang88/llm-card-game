@@ -23,7 +23,7 @@ This is a TCG game.
 - **Deployment:**
   - When you play a unit card, it goes face-down (hidden from opponent) into an empty slot in your **Reinforcement Row**.You can play up to one a turn.
   - Units each have a "delay" stat, which is how many turns (0-4) it must wait before being able to be deployed to any active front line slots. Usually more powerful units have a higher delay.
-  - At the start of your next turn, you may move up to one unit in your Reinforcement Row move forward to fill empty slots (or reinforce an existing identical unit, see the `Merging` section below) in your **Front Line**, flipping face-up and becoming active. If the Front Line is full, the unit remains in the Reinforcement Row.
+  - At the start of your turn, you may move any number of ready units from your Reinforcement Row forward to fill empty slots (or reinforce existing identical units, see the `Merging` section below) in your **Front Line**, flipping them face-up and becoming active. If the Front Line is full, units remain in the Reinforcement Row.
 
 **2. Unit Anatomy: Power, Health, & Morale**
 
@@ -64,9 +64,9 @@ This is a TCG game.
 
 **6. Combat & Action Flow**
 
-- On their turn, players typically do all of the following (in order), one each:
-  1. Playing a unit card to your Reinforcement Row.
-  2. Moving a unit from your Reinforcement Row to your Front Line.
+- On their turn, players typically do the following (in order):
+  1. Playing a unit card to your Reinforcement Row (limit one per turn).
+  2. Moving any number of ready units from your Reinforcement Row to your Front Line.
   3. Using your Commander's ability (these are usually powerful abilities that are used sparingly, they have cooldowns).
   4. Draw a card from their deck. If it is exhausted, reshuffle discard pile into deck.
   5. Ends the turn.

@@ -56,6 +56,5 @@ export function switchTurn(gameState: GameState): void {
   
   const currentPlayer = getCurrentPlayer(gameState);
   currentPlayer.hasPlayedUnitThisTurn = false;
-  currentPlayer.hasDeployedThisTurn = false;
   currentPlayer.hasUsedCommanderThisTurn = false;
 }

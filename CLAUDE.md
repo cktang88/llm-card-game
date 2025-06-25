@@ -56,6 +56,7 @@ This is "The Will to Fight" - a full-stack trading card game built on Cloudflare
 - **Two-Row Board**: Front Line (5 slots) + Reinforcement Row (3 slots)
 - **Combat**: Column-based targeting with health/morale damage types
 - **Turn Phases**: Play → Deploy → Commander → Combat
+- **Deploy Phase**: Move any number of ready units from Reinforcement Row to Front Line
 - **Win Condition**: Reduce opponent's Overall Army Morale to 0
 
 ### Development Notes

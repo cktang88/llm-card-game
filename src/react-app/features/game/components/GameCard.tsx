@@ -11,7 +11,6 @@ interface GameCardProps {
   onClick?: () => void;
   onHover?: () => void;
   onHoverEnd?: () => void;
-  isDraggable?: boolean;
   isSelected?: boolean;
   isHovered?: boolean;
   isFaceDown?: boolean;
@@ -26,7 +25,6 @@ export const GameCard: React.FC<GameCardProps> = ({
   onClick,
   onHover,
   onHoverEnd,
-  isDraggable,
   isSelected,
   isHovered,
   isFaceDown = false,
@@ -70,6 +68,29 @@ export const GameCard: React.FC<GameCardProps> = ({
   const currentMorale = unit ? unit.currentMorale : data.baseMorale;
   const power = unit ? getUnitPower(unit) : data.baseMorale;
 
+  // Unified delay display logic
+  const getDelayDisplay = () => {
+    if (!unit) {
+      // Card in hand or deck - show base delay
+      return data.delay > 0 ? { type: 'delay', value: data.delay } : null;
+    }
+    
+    if (unit.position?.row === 'reinforcement') {
+      // Unit in reinforcement row
+      if (unit.turnsInReserve >= unit.delay) {
+        return { type: 'ready', value: 0 };
+      } else {
+        const turnsLeft = unit.delay - unit.turnsInReserve;
+        return { type: 'waiting', value: turnsLeft };
+      }
+    }
+    
+    // Unit on front line - no delay display needed
+    return null;
+  };
+
+  const delayInfo = getDelayDisplay();
+
   if (isFaceDown && !showPreview) {
     return (
       <motion.div
@@ -78,6 +99,7 @@ export const GameCard: React.FC<GameCardProps> = ({
           sizeClasses[size],
           isSelected && 'border-yellow-500',
           isHovered && 'border-gray-500',
+          delayInfo?.type === 'ready' && 'border-green-500 border-[3px]',
           className
         )}
         onClick={onClick}
@@ -100,10 +122,11 @@ export const GameCard: React.FC<GameCardProps> = ({
           <div className="text-gray-400 font-bold text-lg">?</div>
         </div>
         
-        {/* Delay Display on Card Back */}
-        {data.delay > 0 && (
-          <div className="absolute bottom-2 right-2 bg-orange-600 text-white rounded-full w-10 h-10 flex items-center justify-center font-bold text-lg shadow-lg">
-            {data.delay}
+        {/* Unified Delay Display */}
+        {delayInfo && delayInfo.type !== 'ready' && (
+          <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-black/70 rounded px-1.5 py-0.5">
+            <Clock className="w-4 h-4 text-yellow-500" />
+            <span className="text-yellow-500 font-bold">{delayInfo.value}</span>
           </div>
         )}
         
@@ -125,8 +148,7 @@ export const GameCard: React.FC<GameCardProps> = ({
               sizeClasses[size],
               isSelected && 'border-yellow-500',
               isHovered && 'border-blue-400',
-              data.delay >= 3 && 'border-orange-600',
-              data.delay === 4 && 'border-red-600',
+              delayInfo?.type === 'ready' && 'border-green-500 border-[3px] animate-pulse',
               className
             )}
             onClick={onClick}
@@ -144,13 +166,6 @@ export const GameCard: React.FC<GameCardProps> = ({
         <h3 className="font-bold text-white truncate">{data.name}</h3>
       </div>
 
-      {/* Delay Indicator */}
-      {data.delay > 0 && (
-        <div className="absolute top-8 right-1 flex items-center gap-1 bg-black/70 rounded px-1">
-          <Clock className="w-3 h-3 text-yellow-500" />
-          <span className="text-yellow-500 font-bold">{data.delay}</span>
-        </div>
-      )}
 
       {/* Card Art Area */}
       <div className="absolute top-12 left-2 right-2 bottom-16 bg-gray-800/50 rounded flex items-center justify-center">
@@ -168,52 +183,50 @@ export const GameCard: React.FC<GameCardProps> = ({
       </div>
 
       {/* Stats Bar */}
-      <div className="absolute bottom-0 left-0 right-0 bg-black/80 backdrop-blur-sm px-2 py-1 flex justify-between items-center">
-        {/* Health */}
-        <div className="flex items-center gap-1">
-          <Heart className="w-4 h-4 text-red-500" />
-          <span className="text-white font-bold">
-            {currentHealth}
-            {unit && unit.currentHealth < unit.baseHealth && (
-              <span className="text-gray-400 text-xs">/{unit.baseHealth}</span>
-            )}
-          </span>
-        </div>
-
-        {/* Power/Morale */}
-        <div className="flex items-center gap-1">
-          <span className={cn('font-bold text-lg', getDamageTypeColor())}>
-            {power}
-          </span>
-          {getDamageTypeIcon()}
-        </div>
-
-        {/* Morale */}
-        <div className="flex items-center gap-1">
-          <Brain className="w-4 h-4 text-blue-500" />
-          <span className="text-white font-bold">
-            {currentMorale}
-            {unit && unit.currentMorale < unit.baseMorale && (
-              <span className="text-gray-400 text-xs">/{unit.baseMorale}</span>
-            )}
-          </span>
+      <div className="absolute bottom-0 left-0 right-0 bg-black/80 backdrop-blur-sm px-2 py-1">
+        <div className="flex justify-between items-center">
+          {/* Left side: Health and Morale */}
+          <div className="flex gap-2">
+            <div className="flex items-center gap-1">
+              <Heart className="w-3 h-3 text-red-500" />
+              <span className="text-white font-bold text-xs">
+                {currentHealth}
+                {unit && unit.currentHealth < unit.baseHealth && (
+                  <span className="text-gray-400">/{unit.baseHealth}</span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Brain className="w-3 h-3 text-blue-500" />
+              <span className="text-white font-bold text-xs">
+                {currentMorale}
+                {unit && unit.currentMorale < unit.baseMorale && (
+                  <span className="text-gray-400">/{unit.baseMorale}</span>
+                )}
+              </span>
+            </div>
+          </div>
+          
+          {/* Center: Power */}
+          <div className="flex items-center gap-1">
+            <span className={cn('font-bold text-base', getDamageTypeColor())}>
+              {power}
+            </span>
+            {getDamageTypeIcon()}
+          </div>
+          
+          {/* Right side: Space for delay indicator */}
+          <div className="w-8">
+            {/* This empty div reserves space for the delay indicator */}
+          </div>
         </div>
       </div>
 
-      {/* Unit-specific indicators */}
-      {unit && unit.position?.row === 'reinforcement' && (
-        <div className="absolute top-8 left-1 rounded px-1 py-0.5">
-          {unit.turnsInReserve >= unit.delay ? (
-            <div className="bg-green-600/80">
-              <span className="text-white text-xs font-bold">Ready!</span>
-            </div>
-          ) : (
-            <div className="bg-orange-600/80">
-              <span className="text-white text-xs font-bold">
-                {unit.delay - unit.turnsInReserve} turn{unit.delay - unit.turnsInReserve !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
+      {/* Unified Delay Display */}
+      {delayInfo && delayInfo.type !== 'ready' && (
+        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 bg-black/70 rounded px-1.5 py-0.5">
+          <Clock className="w-3 h-3 text-yellow-500" />
+          <span className="text-yellow-500 font-bold text-sm">{delayInfo.value}</span>
         </div>
       )}
           </motion.div>

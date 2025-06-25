@@ -216,9 +216,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const player = get().getCurrentPlayer();
     if (!player) return false;
     
-    // Check if player has already deployed this turn
-    if (player.hasDeployedThisTurn) return false;
-    
     const unit = player.reinforcementRow[reinforcementSlot];
     if (!unit) return false;
     

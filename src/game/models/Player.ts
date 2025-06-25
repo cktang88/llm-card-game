@@ -13,7 +13,6 @@ export interface Player {
   frontLine: (Unit | null)[];
   reinforcementRow: (Unit | null)[];
   hasPlayedUnitThisTurn: boolean;
-  hasDeployedThisTurn: boolean;
   hasUsedCommanderThisTurn: boolean;
 }
 
@@ -36,7 +35,6 @@ export function createPlayer(
     frontLine: Array(5).fill(null),
     reinforcementRow: Array(3).fill(null),
     hasPlayedUnitThisTurn: false,
-    hasDeployedThisTurn: false,
     hasUsedCommanderThisTurn: false,
   };
 }
