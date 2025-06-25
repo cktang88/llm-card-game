@@ -14,7 +14,6 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, index }) => {
   const { selectCard, hoverCard, canPlayCard, selectedCard, hoveredCard } = useGameStore();
   
   const canDrag = canPlayCard();
-  console.log('Can drag card:', canDrag, 'Card ID:', card.id);
   
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'card',

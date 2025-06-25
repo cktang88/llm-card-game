@@ -33,6 +33,9 @@ async function processAITurn(gameManager: GameManager, aiPlayerId: string): Prom
   let actionCount = 0;
   const maxActions = 10; // Prevent infinite loops
   
+  // Add small delay to simulate thinking
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
   while (actionCount < maxActions) {
     const gameState = gameManager.getGameState();
     
@@ -42,7 +45,10 @@ async function processAITurn(gameManager: GameManager, aiPlayerId: string): Prom
       break;
     }
     
-    console.log(`[AI] Current phase: ${gameState.phase}, turn: ${gameState.turn}`);
+    const aiPlayer = gameState.players[gameState.currentPlayerIndex];
+    console.log(`[AI] Turn ${gameState.turn}, Hand: ${aiPlayer.hand.length} cards, Deck: ${aiPlayer.deck.length} cards`);
+    console.log(`[AI] Reinforcement slots: ${aiPlayer.reinforcementRow.map(u => u ? u.name : 'empty').join(', ')}`);
+    console.log(`[AI] Front line slots: ${aiPlayer.frontLine.map(u => u ? u.name : 'empty').join(', ')}`);
     
     // Get AI decision
     const action = SimpleAI.makeDecision(gameState, aiPlayerId);
@@ -51,12 +57,21 @@ async function processAITurn(gameManager: GameManager, aiPlayerId: string): Prom
       break;
     }
     
-    console.log(`[AI] Attempting action: ${action.type}`);
+    console.log(`[AI] Attempting action: ${action.type}`, action.data);
     
     // Process the action
     const success = gameManager.processAction(action);
     if (!success) {
       console.log(`[AI] Action failed: ${action.type}`);
+      // If we can't do anything else, end turn
+      const endTurnAction = {
+        type: 'endTurn' as const,
+        playerId: aiPlayerId,
+        data: {},
+        timestamp: new Date()
+      };
+      const endTurnSuccess = gameManager.processAction(endTurnAction);
+      console.log(`[AI] Forced end turn: ${endTurnSuccess}`);
       break;
     }
     
@@ -67,6 +82,9 @@ async function processAITurn(gameManager: GameManager, aiPlayerId: string): Prom
       console.log('[AI] Turn ended');
       break;
     }
+    
+    // Small delay between actions
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     actionCount++;
   }
@@ -336,7 +354,7 @@ gameApi.post(
   validator("json", (value, c) => {
     const { type, playerId, data } = value as { type?: string; playerId?: string; data?: Record<string, unknown> };
     
-    const validActions = ['playUnit', 'deployUnit', 'useCommander', 'drawCard', 'endTurn', 'surrender'];
+    const validActions = ['playUnit', 'deployUnit', 'useCommander', 'drawCard', 'endTurn', 'surrender', 'mulligan'];
     if (!type || !validActions.includes(type)) {
       return c.json({
         success: false,
@@ -379,7 +397,7 @@ gameApi.post(
       const gameManager = new GameManager(gameState);
       
       const success = gameManager.processAction({
-        type: type as 'playUnit' | 'deployUnit' | 'useCommander' | 'drawCard' | 'endTurn' | 'surrender',
+        type: type as 'playUnit' | 'deployUnit' | 'useCommander' | 'drawCard' | 'endTurn' | 'surrender' | 'mulligan',
         playerId,
         data,
         timestamp: new Date()

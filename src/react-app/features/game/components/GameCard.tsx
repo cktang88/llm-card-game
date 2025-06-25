@@ -14,6 +14,7 @@ interface GameCardProps {
   isSelected?: boolean;
   isHovered?: boolean;
   isFaceDown?: boolean;
+  canPreview?: boolean;
   size?: 'small' | 'medium' | 'large';
   className?: string;
 }
@@ -28,9 +29,11 @@ export const GameCard: React.FC<GameCardProps> = ({
   isSelected,
   isHovered,
   isFaceDown = false,
+  canPreview = false,
   size = 'medium',
   className,
 }) => {
+  const [showPreview, setShowPreview] = React.useState(false);
   const data = unit || card;
   if (!data) return null;
 
@@ -66,7 +69,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   const currentMorale = unit ? unit.currentMorale : data.baseMorale;
   const power = unit ? getUnitPower(unit) : data.baseMorale;
 
-  if (isFaceDown) {
+  if (isFaceDown && !showPreview) {
     return (
       <motion.div
         className={cn(
@@ -77,14 +80,35 @@ export const GameCard: React.FC<GameCardProps> = ({
           className
         )}
         onClick={onClick}
-        onMouseEnter={onHover}
-        onMouseLeave={onHoverEnd}
-        whileHover={{ scale: 1.1, zIndex: 50 }}
-        whileTap={{ scale: 0.95 }}
+        onMouseEnter={() => {
+          if (canPreview) {
+            setShowPreview(true);
+          }
+          onHover?.();
+        }}
+        onMouseLeave={() => {
+          setShowPreview(false);
+          onHoverEnd?.();
+        }}
+        whileHover={{ scale: 1.05, zIndex: 50 }}
         transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       >
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Flame className="w-8 h-8 text-gray-600" />
+        {/* Card Back Design */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <Flame className="w-8 h-8 text-gray-600 mb-2" />
+          <div className="text-gray-400 font-bold text-lg">?</div>
+        </div>
+        
+        {/* Delay Display on Card Back */}
+        {data.delay > 0 && (
+          <div className="absolute bottom-2 right-2 bg-orange-600 text-white rounded-full w-10 h-10 flex items-center justify-center font-bold text-lg shadow-lg">
+            {data.delay}
+          </div>
+        )}
+        
+        {/* Unit Type Indicator */}
+        <div className="absolute top-2 left-2 text-xs text-gray-500 font-semibold">
+          UNIT
         </div>
       </motion.div>
     );

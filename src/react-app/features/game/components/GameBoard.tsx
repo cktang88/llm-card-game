@@ -41,6 +41,7 @@ const DraggableUnit: React.FC<DraggableUnitProps> = ({ unit, index, row, isPlaye
         unit={unit}
         size="medium"
         isFaceDown={unit.faceDown}
+        canPreview={isPlayerBoard} // Only allow preview for player's own cards
         className="w-full h-full"
       />
       {canDrag && (
@@ -66,7 +67,6 @@ const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, 
   const [{ isOver, canDrop }, drop] = useDrop(() => ({
     accept: ['card', 'unit'],
     drop: (item: any) => {
-      console.log('Drop detected:', item, 'at slot:', index, 'row:', row);
       if (onDrop) {
         if (item.cardId) {
           // Card from hand

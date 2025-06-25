@@ -5,9 +5,10 @@ import { motion } from 'framer-motion';
 import { GameBoard } from './components/GameBoard';
 import { PlayerHand } from './components/PlayerHand';
 import { PlayerInfo } from './components/PlayerInfo';
+import { GameCard } from './components/GameCard';
 import { useGameStore } from '../../store/gameStore';
 import { Button } from '@/components/ui/button';
-import { Check, Copy, Users } from 'lucide-react';
+import { Check, Copy, Users, Flag, Shuffle } from 'lucide-react';
 import { toast } from 'sonner';
 import { GameNavigation } from '../../components/GameNavigation';
 import { cn } from '@/lib/utils';
@@ -15,6 +16,8 @@ import { cn } from '@/lib/utils';
 export const GamePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMulliganed, setHasMulliganed] = useState(false);
+  const [showMulliganPrompt, setShowMulliganPrompt] = useState(false);
   
   const {
     gameState,
@@ -45,6 +48,12 @@ export const GamePage: React.FC = () => {
       try {
         await loadRoom(roomCodeFromUrl);
         setIsLoading(false);
+        
+        // Show mulligan prompt on first turn only
+        const state = useGameStore.getState().gameState;
+        if (state && state.turn === 1 && !hasMulliganed) {
+          setShowMulliganPrompt(true);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load game');
         setIsLoading(false);
@@ -139,11 +148,97 @@ export const GamePage: React.FC = () => {
     }
   };
 
+  const handleConcede = async () => {
+    if (!confirm('Are you sure you want to concede? This will end the game.')) {
+      return;
+    }
+    
+    const success = await processAction({
+      type: 'surrender',
+      playerId,
+      data: {},
+    });
+    
+    if (success) {
+      toast.success('You have conceded the match');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1000);
+    } else {
+      toast.error('Failed to concede');
+    }
+  };
+
+  const handleMulligan = async () => {
+    const success = await processAction({
+      type: 'mulligan',
+      playerId,
+      data: {},
+    });
+    
+    if (success) {
+      toast.success('Hand shuffled and redrawn!');
+      setHasMulliganed(true);
+      setShowMulliganPrompt(false);
+    } else {
+      toast.error('Cannot mulligan');
+    }
+  };
+
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col game-container">
         <GameNavigation />
         <div className="flex-1 flex flex-col p-4">
+          {/* Mulligan Prompt */}
+          {showMulliganPrompt && gameState && gameState.turn === 1 && currentPlayer && (
+            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-gray-800 p-6 rounded-lg max-w-4xl">
+                <h2 className="text-xl font-bold mb-4">Mulligan Initial Hand?</h2>
+                <p className="text-gray-300 mb-4">
+                  You can shuffle your starting hand back into your deck and draw 5 new cards. 
+                  You can only do this once at the start of the game.
+                </p>
+                
+                {/* Display current hand */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-400 mb-2">Your Current Hand:</h3>
+                  <div className="flex gap-2 justify-center flex-wrap">
+                    {currentPlayer.hand.map((card) => (
+                      <div key={card.id} className="transition-transform hover:scale-105">
+                        <GameCard
+                          card={card}
+                          size="medium"
+                          className="shadow-lg"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <Button
+                    onClick={handleMulligan}
+                    variant="default"
+                    className="flex-1"
+                  >
+                    <Shuffle className="w-4 h-4 mr-2" />
+                    Mulligan
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowMulliganPrompt(false);
+                      setHasMulliganed(true);
+                    }}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Keep Hand
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Game Header */}
           <div className="mb-1 flex justify-between items-center">
             <div className="flex items-center gap-4">
@@ -206,8 +301,8 @@ export const GamePage: React.FC = () => {
 
               {/* Action Buttons - Middle */}
               <div className="flex-1 flex items-center">
-                {isMyTurn() && (
-                  <div className="w-full space-y-2 px-4">
+                <div className="w-full space-y-2 px-4">
+                  {isMyTurn() && (
                     <Button
                       onClick={handleEndTurn}
                       className="w-full"
@@ -217,8 +312,17 @@ export const GamePage: React.FC = () => {
                       <Check className="w-4 h-4 mr-2" />
                       End Turn
                     </Button>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    onClick={handleConcede}
+                    className="w-full"
+                    variant="destructive"
+                    size="sm"
+                  >
+                    <Flag className="w-3 h-3 mr-2" />
+                    Concede
+                  </Button>
+                </div>
               </div>
 
               {/* Current Player Info - Bottom */}

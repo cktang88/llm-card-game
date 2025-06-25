@@ -48,6 +48,9 @@ export class GameManager {
       case 'surrender':
         return this.surrender(action.playerId);
       
+      case 'mulligan':
+        return this.mulligan(action.playerId);
+      
       default:
         return false;
     }
@@ -218,6 +221,39 @@ export class GameManager {
     this.gameState.status = 'finished';
     this.gameState.updatedAt = new Date();
     
+    return true;
+  }
+
+  private mulligan(playerId: string): boolean {
+    // Can only mulligan on turn 1
+    if (this.gameState.turn !== 1) return false;
+    
+    const playerIndex = this.gameState.players.findIndex(p => p.id === playerId);
+    if (playerIndex === -1) return false;
+    
+    const player = this.gameState.players[playerIndex];
+    
+    // Check if player has already mulliganed (we'll track this with a flag)
+    if ((player as any).hasMulliganed) return false;
+    
+    // Shuffle hand back into deck
+    const currentHand = [...player.hand];
+    player.deck.push(...currentHand);
+    player.hand = [];
+    
+    // Shuffle the deck
+    for (let i = player.deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [player.deck[i], player.deck[j]] = [player.deck[j], player.deck[i]];
+    }
+    
+    // Draw 5 new cards
+    drawCards(player, 5);
+    
+    // Mark that player has mulliganed
+    (player as any).hasMulliganed = true;
+    
+    this.gameState.updatedAt = new Date();
     return true;
   }
 

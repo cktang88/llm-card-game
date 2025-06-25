@@ -17,7 +17,7 @@ export interface GameState {
 }
 
 export interface GameAction {
-  type: 'playUnit' | 'deployUnit' | 'useCommander' | 'drawCard' | 'endTurn' | 'surrender';
+  type: 'playUnit' | 'deployUnit' | 'useCommander' | 'drawCard' | 'endTurn' | 'surrender' | 'mulligan';
   playerId: string;
   data: any;
   timestamp: Date;
