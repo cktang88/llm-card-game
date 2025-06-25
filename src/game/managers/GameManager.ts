@@ -186,6 +186,9 @@ export class GameManager {
     // Tick down commander cooldown
     tickCommanderCooldown(newCurrentPlayer.commander);
     
+    // Draw card at start of turn
+    drawCards(newCurrentPlayer, GAME_CONSTANTS.CARDS_DRAWN_PER_TURN);
+    
     this.gameState.updatedAt = new Date();
     return true;
   }

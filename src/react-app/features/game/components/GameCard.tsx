@@ -70,7 +70,7 @@ export const GameCard: React.FC<GameCardProps> = ({
     return (
       <motion.div
         className={cn(
-          'relative rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 border-2 border-gray-700 shadow-lg cursor-pointer',
+          'relative rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 border-2 border-gray-700 shadow-lg cursor-pointer select-none',
           sizeClasses[size],
           isSelected && 'border-yellow-500',
           isHovered && 'border-gray-500',
@@ -79,8 +79,9 @@ export const GameCard: React.FC<GameCardProps> = ({
         onClick={onClick}
         onMouseEnter={onHover}
         onMouseLeave={onHoverEnd}
-        whileHover={{ scale: 1.05 }}
+        whileHover={{ scale: 1.1, zIndex: 50 }}
         whileTap={{ scale: 0.95 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       >
         <div className="absolute inset-0 flex items-center justify-center">
           <Flame className="w-8 h-8 text-gray-600" />
@@ -92,7 +93,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   return (
     <motion.div
       className={cn(
-        'relative rounded-lg bg-gradient-to-br from-gray-900 to-black border-2 shadow-xl overflow-hidden cursor-pointer',
+        'relative rounded-lg bg-gradient-to-br from-gray-900 to-black border-2 shadow-xl overflow-hidden cursor-pointer select-none',
         sizeClasses[size],
         isSelected && 'border-yellow-500',
         isHovered && 'border-blue-400',
@@ -103,8 +104,9 @@ export const GameCard: React.FC<GameCardProps> = ({
       onClick={onClick}
       onMouseEnter={onHover}
       onMouseLeave={onHoverEnd}
-      whileHover={{ scale: 1.05 }}
+      whileHover={{ scale: 1.1, zIndex: 50 }}
       whileTap={{ scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       style={{
         backgroundImage: `linear-gradient(to bottom right, rgba(0,0,0,0.8), rgba(0,0,0,0.9))`,
       }}
@@ -171,11 +173,19 @@ export const GameCard: React.FC<GameCardProps> = ({
       </div>
 
       {/* Unit-specific indicators */}
-      {unit && unit.turnsInReserve > 0 && unit.turnsInReserve < unit.delay && (
-        <div className="absolute top-8 left-1 bg-orange-600/80 rounded px-1 py-0.5">
-          <span className="text-white text-xs font-bold">
-            {unit.delay - unit.turnsInReserve} turns
-          </span>
+      {unit && unit.position?.row === 'reinforcement' && (
+        <div className="absolute top-8 left-1 rounded px-1 py-0.5">
+          {unit.turnsInReserve >= unit.delay ? (
+            <div className="bg-green-600/80">
+              <span className="text-white text-xs font-bold">Ready!</span>
+            </div>
+          ) : (
+            <div className="bg-orange-600/80">
+              <span className="text-white text-xs font-bold">
+                {unit.delay - unit.turnsInReserve} turn{unit.delay - unit.turnsInReserve !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </motion.div>

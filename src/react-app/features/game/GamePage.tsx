@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { motion } from 'framer-motion';
@@ -6,59 +6,121 @@ import { GameBoard } from './components/GameBoard';
 import { PlayerHand } from './components/PlayerHand';
 import { PlayerInfo } from './components/PlayerInfo';
 import { useGameStore } from '../../store/gameStore';
-import { createGameState } from '../../../game/models/GameState';
-import { createPlayer } from '../../../game/models/Player';
-import { ASHEN_LEGION_CARDS } from '../../../game/data/ashen-legion-cards';
-import { ASHEN_LEGION_COMMANDERS } from '../../../game/data/commanders';
 import { Button } from '@/components/ui/button';
-import { RotateCw, Check } from 'lucide-react';
+import { Check, Copy, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { GameNavigation } from '../../components/GameNavigation';
+import { cn } from '@/lib/utils';
 
 export const GamePage: React.FC = () => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const {
     gameState,
+    roomCode,
     playerId,
-    initializeGame,
+    gameMode,
+    loadRoom,
     getCurrentPlayer,
     getOpponentPlayer,
     isMyTurn,
     processAction,
+    clearGame,
   } = useGameStore();
 
-  // Initialize game for testing
+  // Get room code from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const roomCodeFromUrl = urlParams.get('room');
+
+  // Load room on component mount
   useEffect(() => {
-    if (!gameState) {
-      // Create test players with Ashen Legion decks
-      const deck1 = [...ASHEN_LEGION_CARDS.slice(0, 20)];
-      const deck2 = [...ASHEN_LEGION_CARDS.slice(0, 20)];
-      
-      const player1 = createPlayer(
-        'player1',
-        'Player 1',
-        ASHEN_LEGION_COMMANDERS[0],
-        deck1
-      );
-      
-      const player2 = createPlayer(
-        'player2',
-        'Player 2',
-        ASHEN_LEGION_COMMANDERS[1],
-        deck2
-      );
-      
-      const newGameState = createGameState('game1', player1, player2);
-      initializeGame(newGameState, 'player1');
-    }
-  }, [gameState, initializeGame]);
+    const loadGame = async () => {
+      if (!roomCodeFromUrl) {
+        setError('No room code provided');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        await loadRoom(roomCodeFromUrl);
+        setIsLoading(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load game');
+        setIsLoading(false);
+      }
+    };
+
+    loadGame();
+
+    // Cleanup on unmount
+    return () => {
+      clearGame();
+    };
+  }, [roomCodeFromUrl, loadRoom, clearGame]);
 
   const currentPlayer = getCurrentPlayer();
   const opponentPlayer = getOpponentPlayer();
+  
+  const copyRoomCode = () => {
+    if (roomCode) {
+      navigator.clipboard.writeText(roomCode);
+      toast.success('Room code copied!');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-white">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading game...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <Button onClick={() => window.location.href = '/'}>
+            Return Home
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!gameState || !currentPlayer || !opponentPlayer || !playerId) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-white">Loading game...</div>
+        <div className="text-white">Waiting for game data...</div>
+      </div>
+    );
+  }
+  
+  // Show waiting screen for multiplayer if opponent hasn't joined
+  if (gameMode === 'multiplayer' && opponentPlayer.id === 'waiting-for-player') {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <Users className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+          <h2 className="text-2xl font-bold mb-4">Waiting for opponent...</h2>
+          <p className="mb-6">Share this room code with your friend:</p>
+          <div className="bg-gray-800 rounded-lg p-4 inline-flex items-center gap-2">
+            <span className="text-3xl font-mono">{roomCode}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={copyRoomCode}
+              className="hover:bg-gray-700"
+            >
+              <Copy className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -77,34 +139,46 @@ export const GamePage: React.FC = () => {
     }
   };
 
-  const handleDrawCard = async () => {
-    const success = await processAction({
-      type: 'drawCard',
-      playerId,
-      data: {},
-    });
-    
-    if (success) {
-      toast.success('Drew a card');
-    } else {
-      toast.error('Cannot draw card');
-    }
-  };
-
-
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col">
         <GameNavigation />
-        <div className="container mx-auto p-4">
+        <div className="flex-1 flex flex-col p-4">
           {/* Game Header */}
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-500 to-red-600 bg-clip-text text-transparent">
+          <div className="mb-1 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <h2 className="text-lg font-bold">Room: {roomCode}</h2>
+              {gameMode === 'multiplayer' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={copyRoomCode}
+                  className="h-7 text-xs"
+                >
+                  <Copy className="w-3 h-3 mr-1" />
+                  Copy
+                </Button>
+              )}
+            </div>
+            <div className="text-xs text-gray-400">
+              {gameMode === 'vs_ai' ? 'Playing vs AI' : 'Multiplayer'}
+            </div>
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-red-600 bg-clip-text text-transparent">
               The Will to Fight
             </h1>
             <div className="flex items-center gap-4">
               <div className="text-sm">
                 Turn {gameState.turn} - {gameState.phase} Phase
+              </div>
+              <div className={cn(
+                "px-3 py-1 rounded font-bold text-sm",
+                isMyTurn() 
+                  ? "bg-green-600 text-white animate-pulse" 
+                  : "bg-gray-700 text-gray-300"
+              )}>
+                {isMyTurn() ? "Your Turn" : "Opponent's Turn"}
               </div>
               {gameState.status === 'finished' && gameState.winner && (
                 <div className="text-lg font-bold text-yellow-500">
@@ -114,43 +188,58 @@ export const GamePage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-[300px_1fr_300px] gap-4">
-            {/* Left Column - Current Player Info */}
-            <div className="space-y-4">
-              <PlayerInfo
-                player={currentPlayer}
-                isCurrentPlayer={true}
-                isActivePlayer={gameState.players[gameState.currentPlayerIndex].id === currentPlayer.id}
-              />
-              
-              {/* Action Buttons */}
-              {isMyTurn() && (
-                <div className="space-y-2">
-                  <Button
-                    onClick={handleDrawCard}
-                    className="w-full"
-                    variant="secondary"
-                  >
-                    <RotateCw className="w-4 h-4 mr-2" />
-                    Draw Card
-                  </Button>
-                  
-                  <Button
-                    onClick={handleEndTurn}
-                    className="w-full"
-                    variant="default"
-                  >
-                    <Check className="w-4 h-4 mr-2" />
-                    End Turn
-                  </Button>
-                </div>
-              )}
+          <div className="grid grid-cols-[260px_1fr] gap-4 min-h-[600px]">
+            {/* Left Column - Player Info */}
+            <div className="flex flex-col justify-between">
+              {/* Opponent Info - Top */}
+              <motion.div
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5 }}
+              >
+                <PlayerInfo
+                  player={opponentPlayer}
+                  isCurrentPlayer={false}
+                  isActivePlayer={gameState.players[gameState.currentPlayerIndex].id === opponentPlayer.id}
+                />
+              </motion.div>
+
+              {/* Action Buttons - Middle */}
+              <div className="flex-1 flex items-center">
+                {isMyTurn() && (
+                  <div className="w-full space-y-2 px-4">
+                    <Button
+                      onClick={handleEndTurn}
+                      className="w-full"
+                      variant="default"
+                      size="lg"
+                    >
+                      <Check className="w-4 h-4 mr-2" />
+                      End Turn
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Current Player Info - Bottom */}
+              <motion.div
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+              >
+                <PlayerInfo
+                  player={currentPlayer}
+                  isCurrentPlayer={true}
+                  isActivePlayer={gameState.players[gameState.currentPlayerIndex].id === currentPlayer.id}
+                />
+              </motion.div>
             </div>
 
-            {/* Center - Game Boards */}
-            <div className="space-y-4">
+            {/* Right Column - Game Boards */}
+            <div className="flex flex-col h-full">
               {/* Opponent Board */}
               <motion.div
+                className="flex-1"
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
@@ -163,12 +252,12 @@ export const GamePage: React.FC = () => {
               </motion.div>
 
               {/* Combat Zone Divider */}
-              <div className="relative">
+              <div className="relative py-1">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t-2 border-yellow-600" />
                 </div>
                 <div className="relative flex justify-center">
-                  <span className="bg-black px-4 text-yellow-600 font-bold">
+                  <span className="bg-black px-2 text-yellow-600 font-bold text-sm">
                     COMBAT ZONE
                   </span>
                 </div>
@@ -176,6 +265,7 @@ export const GamePage: React.FC = () => {
 
               {/* Player Board */}
               <motion.div
+                className="flex-1"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
@@ -187,20 +277,11 @@ export const GamePage: React.FC = () => {
                 />
               </motion.div>
             </div>
-
-            {/* Right Column - Opponent Info */}
-            <div>
-              <PlayerInfo
-                player={opponentPlayer}
-                isCurrentPlayer={false}
-                isActivePlayer={gameState.players[gameState.currentPlayerIndex].id === opponentPlayer.id}
-              />
-            </div>
           </div>
 
           {/* Player Hand */}
           <motion.div
-            className="mt-6"
+            className="mt-2 pb-4"
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}

@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { GameState, GameAction } from '../../game/models/GameState';
 import { Card } from '../../game/models/Unit';
 import { Player } from '../../game/models/Player';
-import { GameManager } from '../../game/managers/GameManager';
 import { gameApi } from '../features/game/api';
 import { toast } from 'sonner';
 
@@ -15,10 +14,10 @@ interface DraggedCard {
 interface GameStore {
   // Game state
   gameState: GameState | null;
-  gameManager: GameManager | null;
+  roomCode: string | null;
   gameId: string | null;
   playerId: string | null;
-  isOnline: boolean;
+  gameMode: 'vs_ai' | 'multiplayer' | null;
   
   // UI state
   selectedCard: Card | null;
@@ -27,12 +26,16 @@ interface GameStore {
   selectedReinforcementSlot: number | null;
   selectedFrontLineSlot: number | null;
   
+  // Polling
+  pollingInterval: NodeJS.Timeout | null;
+  
   // Game actions
-  initializeGame: (gameState: GameState, playerId: string) => void;
-  createOnlineGame: (player1Name: string, player2Name: string) => Promise<void>;
-  joinOnlineGame: (gameId: string, playerId: string) => Promise<void>;
+  loadRoom: (roomCode: string) => Promise<void>;
   processAction: (action: Omit<GameAction, 'timestamp'>) => Promise<boolean>;
   refreshGameState: () => Promise<void>;
+  startPolling: () => void;
+  stopPolling: () => void;
+  clearGame: () => void;
   
   // UI actions
   selectCard: (card: Card | null) => void;
@@ -45,7 +48,7 @@ interface GameStore {
   getCurrentPlayer: () => Player | null;
   getOpponentPlayer: () => Player | null;
   isMyTurn: () => boolean;
-  canPlayCard: (card: Card) => boolean;
+  canPlayCard: () => boolean;
   canDeployUnit: (reinforcementSlot: number) => boolean;
   canUseCommander: () => boolean;
 }
@@ -53,102 +56,116 @@ interface GameStore {
 export const useGameStore = create<GameStore>((set, get) => ({
   // Initial state
   gameState: null,
-  gameManager: null,
+  roomCode: null,
   gameId: null,
   playerId: null,
-  isOnline: false,
+  gameMode: null,
   selectedCard: null,
   hoveredCard: null,
   draggedCard: null,
   selectedReinforcementSlot: null,
   selectedFrontLineSlot: null,
+  pollingInterval: null,
   
   // Game actions
-  initializeGame: (gameState, playerId) => {
-    const gameManager = new GameManager(gameState);
-    gameManager.initializeGame();
-    set({ gameState, gameManager, playerId, isOnline: false });
-  },
-  
-  createOnlineGame: async (player1Name, player2Name) => {
-    const response = await gameApi.createGame({
-      player1Name,
-      player2Name,
-    });
+  loadRoom: async (roomCode) => {
+    const response = await gameApi.getRoom(roomCode);
     
-    if (response.success && response.gameState && response.gameId && response.player1Id) {
+    if (response.success && response.room) {
+      const { room } = response;
+      const playerId = sessionStorage.getItem('gamePlayerId');
+      const gameMode = sessionStorage.getItem('gameMode') as 'vs_ai' | 'multiplayer';
+      
       set({
-        gameState: response.gameState,
-        gameId: response.gameId,
-        playerId: response.player1Id,
-        isOnline: true,
-        gameManager: null, // Don't use local game manager for online games
-      });
-      toast.success('Game created successfully!');
-    } else {
-      toast.error(response.error || 'Failed to create game');
-    }
-  },
-  
-  joinOnlineGame: async (gameId, playerId) => {
-    const response = await gameApi.getGame(gameId);
-    
-    if (response.success && response.gameState) {
-      set({
-        gameState: response.gameState,
-        gameId,
+        gameState: room.gameState,
+        roomCode: room.roomCode,
+        gameId: room.id,
         playerId,
-        isOnline: true,
-        gameManager: null,
+        gameMode: gameMode || room.gameMode,
       });
-      toast.success('Joined game successfully!');
+      
+      // Start polling for multiplayer games
+      if (room.gameMode === 'multiplayer' && room.status === 'active') {
+        get().startPolling();
+      }
     } else {
-      toast.error(response.error || 'Failed to join game');
+      toast.error(response.error || 'Failed to load game');
+      throw new Error(response.error || 'Failed to load game');
     }
   },
   
   processAction: async (action) => {
-    const { gameManager, gameId, playerId, isOnline } = get();
+    const { roomCode, playerId } = get();
     
-    if (!playerId) return false;
+    if (!roomCode || !playerId) return false;
     
-    if (isOnline && gameId) {
-      // Online game - send to server
-      const response = await gameApi.processAction(gameId, action);
-      
-      if (response.success && response.gameState) {
-        set({ gameState: response.gameState });
-        return true;
-      } else {
-        toast.error(response.error || 'Action failed');
-        return false;
-      }
-    } else if (gameManager) {
-      // Local game
-      const fullAction: GameAction = {
-        ...action,
-        timestamp: new Date(),
-      };
-      
-      const success = gameManager.processAction(fullAction);
-      if (success) {
-        set({ gameState: gameManager.getGameState() });
-      }
-      return success;
+    const response = await gameApi.processAction(roomCode, action);
+    
+    if (response.success && response.gameState) {
+      set({ gameState: response.gameState });
+      return true;
+    } else {
+      toast.error(response.error || 'Action failed');
+      return false;
     }
-    
-    return false;
   },
   
   refreshGameState: async () => {
-    const { gameId, isOnline } = get();
+    const { roomCode } = get();
     
-    if (!isOnline || !gameId) return;
+    if (!roomCode) return;
     
-    const response = await gameApi.getGame(gameId);
-    if (response.success && response.gameState) {
-      set({ gameState: response.gameState });
+    const response = await gameApi.getRoom(roomCode);
+    if (response.success && response.room) {
+      const currentState = get().gameState;
+      const newState = response.room.gameState;
+      
+      // Only update if state has changed
+      if (JSON.stringify(currentState) !== JSON.stringify(newState)) {
+        set({ gameState: newState });
+      }
     }
+  },
+  
+  startPolling: () => {
+    const { pollingInterval } = get();
+    
+    // Clear existing interval if any
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+    
+    // Poll every 2 seconds
+    const interval = setInterval(() => {
+      get().refreshGameState();
+    }, 2000);
+    
+    set({ pollingInterval: interval });
+  },
+  
+  stopPolling: () => {
+    const { pollingInterval } = get();
+    
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      set({ pollingInterval: null });
+    }
+  },
+  
+  clearGame: () => {
+    get().stopPolling();
+    set({
+      gameState: null,
+      roomCode: null,
+      gameId: null,
+      playerId: null,
+      gameMode: null,
+      selectedCard: null,
+      hoveredCard: null,
+      draggedCard: null,
+      selectedReinforcementSlot: null,
+      selectedFrontLineSlot: null,
+    });
   },
   
   // UI actions
@@ -178,7 +195,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return currentPlayer.id === playerId;
   },
   
-  canPlayCard: (_card) => {
+  canPlayCard: () => {
     const { gameState, playerId, isMyTurn } = get();
     if (!gameState || !playerId || !isMyTurn()) return false;
     

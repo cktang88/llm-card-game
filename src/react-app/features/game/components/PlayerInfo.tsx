@@ -34,7 +34,7 @@ export const PlayerInfo: React.FC<PlayerInfoProps> = ({
   return (
     <motion.div
       className={cn(
-        'p-4 rounded-lg border-2 transition-all',
+        'p-4 rounded-lg border-2 transition-all select-none',
         isActivePlayer ? 'border-yellow-500 bg-yellow-500/10' : 'border-gray-700 bg-gray-800/50',
         isCurrentPlayer && 'border-blue-500'
       )}

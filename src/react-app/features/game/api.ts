@@ -4,25 +4,44 @@ import { Commander } from '../../../game/models/Commander';
 
 const API_BASE = '/api';
 
-export interface CreateGameRequest {
-  player1Name: string;
-  player2Name: string;
-  player1DeckId?: string;
-  player2DeckId?: string;
+export interface CreateRoomRequest {
+  playerName: string;
+  gameMode: 'vs_ai' | 'multiplayer';
 }
 
-export interface CreateGameResponse {
+export interface CreateRoomResponse {
   success: boolean;
+  roomCode?: string;
   gameId?: string;
-  player1Id?: string;
-  player2Id?: string;
+  playerId?: string;
   gameState?: GameState;
   error?: string;
 }
 
-export interface GetGameResponse {
+export interface JoinRoomRequest {
+  playerName: string;
+}
+
+export interface JoinRoomResponse {
   success: boolean;
+  roomCode?: string;
+  gameId?: string;
+  playerId?: string;
   gameState?: GameState;
+  error?: string;
+}
+
+export interface GetRoomResponse {
+  success: boolean;
+  room?: {
+    id: string;
+    roomCode: string;
+    gameMode: 'vs_ai' | 'multiplayer';
+    status: 'waiting' | 'active' | 'completed';
+    player1Id: string | null;
+    player2Id: string | null;
+    gameState: GameState;
+  };
   error?: string;
 }
 
@@ -40,9 +59,9 @@ export interface GetCardsResponse {
 }
 
 class GameApi {
-  async createGame(request: CreateGameRequest): Promise<CreateGameResponse> {
+  async createRoom(request: CreateRoomRequest): Promise<CreateRoomResponse> {
     try {
-      const response = await fetch(`${API_BASE}/games`, {
+      const response = await fetch(`${API_BASE}/games/room`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -54,29 +73,48 @@ class GameApi {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to create game',
+        error: error instanceof Error ? error.message : 'Failed to create room',
       };
     }
   }
 
-  async getGame(gameId: string): Promise<GetGameResponse> {
+  async joinRoom(roomCode: string, request: JoinRoomRequest): Promise<JoinRoomResponse> {
     try {
-      const response = await fetch(`${API_BASE}/games/${gameId}`);
+      const response = await fetch(`${API_BASE}/games/room/${roomCode}/join`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+      
       return await response.json();
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to get game',
+        error: error instanceof Error ? error.message : 'Failed to join room',
+      };
+    }
+  }
+
+  async getRoom(roomCode: string): Promise<GetRoomResponse> {
+    try {
+      const response = await fetch(`${API_BASE}/games/room/${roomCode}`);
+      return await response.json();
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get room',
       };
     }
   }
 
   async processAction(
-    gameId: string,
+    roomCode: string,
     action: Omit<GameAction, 'timestamp'>
   ): Promise<ProcessActionResponse> {
     try {
-      const response = await fetch(`${API_BASE}/games/${gameId}/actions`, {
+      const response = await fetch(`${API_BASE}/games/room/${roomCode}/actions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

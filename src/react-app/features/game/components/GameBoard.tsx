@@ -1,5 +1,5 @@
 import React from 'react';
-import { useDrop } from 'react-dnd';
+import { useDrop, useDrag } from 'react-dnd';
 import { motion } from 'framer-motion';
 import { GameCard } from './GameCard';
 import { Unit } from '../../../../game/models/Unit';
@@ -7,27 +7,88 @@ import { cn } from '@/lib/utils';
 import { useGameStore } from '../../../store/gameStore';
 import { Shield, Swords } from 'lucide-react';
 
+interface DraggableUnitProps {
+  unit: Unit;
+  index: number;
+  row: 'frontLine' | 'reinforcement';
+  isPlayerBoard: boolean;
+}
+
+const DraggableUnit: React.FC<DraggableUnitProps> = ({ unit, index, row, isPlayerBoard }) => {
+  const { canDeployUnit } = useGameStore();
+  
+  // Units can be dragged from reinforcement row to front line if delay is satisfied
+  const canDrag = isPlayerBoard && row === 'reinforcement' && canDeployUnit(index);
+  
+  const [{ isDragging }, drag] = useDrag({
+    type: 'unit',
+    item: { unitId: unit.id, sourceIndex: index, sourceRow: row },
+    canDrag: () => canDrag,
+    collect: (monitor) => ({
+      isDragging: !!monitor.isDragging(),
+    }),
+  });
+
+  return (
+    <div
+      ref={canDrag ? (drag as any) : undefined}
+      className={cn(
+        "absolute inset-0",
+        isDragging && 'opacity-50',
+        canDrag && 'cursor-move'
+      )}
+    >
+      <GameCard
+        unit={unit}
+        size="medium"
+        isFaceDown={unit.faceDown}
+        className="w-full h-full"
+      />
+      {canDrag && (
+        <div className="absolute bottom-1 right-1 bg-green-600 text-white text-xs px-1 py-0.5 rounded">
+          Ready
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface BoardSlotProps {
   unit: Unit | null;
   index: number;
   row: 'frontLine' | 'reinforcement';
   isPlayerBoard: boolean;
-  onDrop?: (cardId: string, sourceIndex: number) => void;
+  onDrop?: (cardId: string, sourceIndex: number, targetIndex: number) => void;
 }
 
 const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, onDrop }) => {
   const { selectFrontLineSlot, selectReinforcementSlot } = useGameStore();
   
   const [{ isOver, canDrop }, drop] = useDrop({
-    accept: 'card',
+    accept: ['card', 'unit'],
     drop: (item: any) => {
       if (onDrop) {
-        onDrop(item.cardId, item.sourceIndex);
+        if (item.cardId) {
+          // Card from hand
+          onDrop(item.cardId, item.sourceIndex, index);
+        } else if (item.unitId && item.sourceRow === 'reinforcement') {
+          // Unit from reinforcement row
+          onDrop(item.unitId, item.sourceIndex, index);
+        }
       }
     },
-    canDrop: (_item: any) => {
-      // Add logic to check if card can be dropped here
-      return isPlayerBoard;
+    canDrop: (item: any) => {
+      if (!isPlayerBoard) return false;
+      
+      if (item.cardId) {
+        // Card from hand can only go to empty reinforcement slots
+        return row === 'reinforcement' && unit === null;
+      } else if (item.unitId && item.sourceRow === 'reinforcement') {
+        // Unit from reinforcement can only go to front line
+        return row === 'frontLine';
+      }
+      
+      return false;
     },
     collect: (monitor) => ({
       isOver: !!monitor.isOver(),
@@ -59,30 +120,19 @@ const BoardSlot: React.FC<BoardSlotProps> = ({ unit, index, row, isPlayerBoard, 
       whileHover={{ scale: 1.02 }}
     >
       {unit ? (
-        <GameCard
+        <DraggableUnit
           unit={unit}
-          size="medium"
-          isFaceDown={unit.faceDown}
-          className="absolute inset-0"
+          index={index}
+          row={row}
+          isPlayerBoard={isPlayerBoard}
         />
       ) : (
-        <div className="text-gray-600 text-sm">
-          {row === 'frontLine' ? 'Front Line' : 'Reinforcement'}
-          <div className="text-xs">Slot {index + 1}</div>
+        <div className="text-gray-600 text-xs">
+          {row === 'frontLine' ? 'Front' : 'Reinforce'}
+          <div className="text-xs">#{index + 1}</div>
         </div>
       )}
       
-      {/* Position indicators */}
-      {row === 'frontLine' && index === 2 && (
-        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-yellow-500">
-          Center
-        </div>
-      )}
-      {row === 'frontLine' && (index === 0 || index === 4) && (
-        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-blue-500">
-          Flank
-        </div>
-      )}
     </motion.div>
   );
 };
@@ -98,70 +148,146 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   frontLine,
   reinforcementRow,
 }) => {
-  const { playerId } = useGameStore();
+  const { processAction, playerId, getCurrentPlayer } = useGameStore();
 
-  const handleCardDrop = (row: 'frontLine' | 'reinforcement') => (cardId: string, sourceIndex: number) => {
+  const handleCardDrop = (row: 'frontLine' | 'reinforcement', targetIndex: number) => async (cardOrUnitId: string, sourceIndex: number) => {
     if (!playerId) return;
     
-    // Handle card drop logic
-    console.log(`Dropped card ${cardId} to ${row} from index ${sourceIndex}`);
+    // Check if this is a card from hand or a unit from reinforcement
+    const currentPlayer = getCurrentPlayer();
+    if (!currentPlayer) return;
+    
+    // Check if it's a unit from reinforcement (will be in reinforcement row)
+    const unitFromReinforcement = currentPlayer.reinforcementRow[sourceIndex];
+    
+    if (unitFromReinforcement && unitFromReinforcement.id === cardOrUnitId && row === 'frontLine') {
+      // This is a unit being deployed from reinforcement to front line
+      const success = await processAction({
+        type: 'deployUnit',
+        playerId,
+        data: { 
+          reinforcementSlot: sourceIndex,
+          frontLineSlot: targetIndex
+        },
+      });
+      
+      if (success) {
+        // Success toast is handled in processAction
+      }
+    } else if (row === 'reinforcement' && !unitFromReinforcement) {
+      // This is a card being played from hand to reinforcement
+      const success = await processAction({
+        type: 'playUnit',
+        playerId,
+        data: { cardId: cardOrUnitId },
+      });
+      
+      if (success) {
+        // Success toast is handled in processAction
+      }
+    }
   };
 
   return (
     <div className={cn(
-      'space-y-4 p-4 rounded-lg',
+      'h-full flex flex-col p-3 rounded-lg select-none',
       isPlayerBoard ? 'bg-blue-900/20' : 'bg-red-900/20'
     )}>
       {/* Player indicator */}
-      <div className="flex items-center justify-center gap-2 text-sm font-bold">
+      <div className="flex items-center justify-center gap-2 text-xs font-bold mb-2">
         {isPlayerBoard ? (
           <>
-            <Shield className="w-4 h-4 text-blue-400" />
+            <Shield className="w-3 h-3 text-blue-400" />
             <span className="text-blue-400">Your Forces</span>
           </>
         ) : (
           <>
-            <Swords className="w-4 h-4 text-red-400" />
+            <Swords className="w-3 h-3 text-red-400" />
             <span className="text-red-400">Enemy Forces</span>
           </>
         )}
       </div>
 
-      {/* Front Line */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-gray-300 text-center">Front Line</h3>
-        <div className="flex gap-2 justify-center">
-          {frontLine.map((unit, index) => (
-            <BoardSlot
-              key={`front-${index}`}
-              unit={unit}
-              index={index}
-              row="frontLine"
-              isPlayerBoard={isPlayerBoard}
-              onDrop={handleCardDrop('frontLine')}
-            />
-          ))}
-        </div>
-      </div>
+      <div className="flex-1 flex flex-col justify-center space-y-2">
+        {isPlayerBoard ? (
+          <>
+            {/* Player Board: Front Line first (closer to combat zone) */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-300 text-center mb-1">Front Line</h3>
+              <div className="flex gap-2 justify-center">
+                {frontLine.map((unit, index) => (
+                  <BoardSlot
+                    key={`front-${index}`}
+                    unit={unit}
+                    index={index}
+                    row="frontLine"
+                    isPlayerBoard={isPlayerBoard}
+                    onDrop={(cardId, sourceIndex, targetIndex) => handleCardDrop('frontLine', targetIndex)(cardId, sourceIndex)}
+                  />
+                ))}
+              </div>
+            </div>
 
-      {/* Combat Line */}
-      <div className="border-t-2 border-gray-600 my-4" />
+            {/* Combat Line */}
+            <div className="border-t-2 border-gray-600 my-2" />
 
-      {/* Reinforcement Row */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-gray-300 text-center">Reinforcement Row</h3>
-        <div className="flex gap-2 justify-center">
-          {reinforcementRow.map((unit, index) => (
-            <BoardSlot
-              key={`reinforce-${index}`}
-              unit={unit}
-              index={index}
-              row="reinforcement"
-              isPlayerBoard={isPlayerBoard}
-              onDrop={handleCardDrop('reinforcement')}
-            />
-          ))}
-        </div>
+            {/* Reinforcement Row */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-300 text-center mb-1">Reinforcement Row</h3>
+              <div className="flex gap-2 justify-center">
+                {reinforcementRow.map((unit, index) => (
+                  <BoardSlot
+                    key={`reinforce-${index}`}
+                    unit={unit}
+                    index={index}
+                    row="reinforcement"
+                    isPlayerBoard={isPlayerBoard}
+                    onDrop={(cardId, sourceIndex, targetIndex) => handleCardDrop('reinforcement', targetIndex)(cardId, sourceIndex)}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Enemy Board: Reinforcement Row first (farther from combat zone) */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-300 text-center mb-1">Reinforcement Row</h3>
+              <div className="flex gap-2 justify-center">
+                {reinforcementRow.map((unit, index) => (
+                  <BoardSlot
+                    key={`reinforce-${index}`}
+                    unit={unit}
+                    index={index}
+                    row="reinforcement"
+                    isPlayerBoard={isPlayerBoard}
+                    onDrop={(cardId, sourceIndex, targetIndex) => handleCardDrop('reinforcement', targetIndex)(cardId, sourceIndex)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Combat Line */}
+            <div className="border-t-2 border-gray-600 my-2" />
+
+            {/* Front Line */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-300 text-center mb-1">Front Line</h3>
+              <div className="flex gap-2 justify-center">
+                {frontLine.map((unit, index) => (
+                  <BoardSlot
+                    key={`front-${index}`}
+                    unit={unit}
+                    index={index}
+                    row="frontLine"
+                    isPlayerBoard={isPlayerBoard}
+                    onDrop={(cardId, sourceIndex, targetIndex) => handleCardDrop('frontLine', targetIndex)(cardId, sourceIndex)}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

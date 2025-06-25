@@ -17,7 +17,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, index }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'card',
     item: { cardId: card.id, sourceIndex: index, sourceType: 'hand' },
-    canDrag: () => canPlayCard(card),
+    canDrag: () => canPlayCard(),
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
@@ -29,7 +29,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, index }) => {
       className={cn(
         'cursor-pointer transition-all',
         isDragging && 'opacity-50',
-        !canPlayCard(card) && 'opacity-60 cursor-not-allowed'
+        !canPlayCard() && 'opacity-60 cursor-not-allowed'
       )}
       initial={{ scale: 0, rotate: -180 }}
       animate={{ 
@@ -52,7 +52,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({ card, index }) => {
         onClick={() => selectCard(card)}
         onHover={() => hoverCard(card)}
         onHoverEnd={() => hoverCard(null)}
-        isDraggable={canPlayCard(card)}
+        isDraggable={canPlayCard()}
       />
     </motion.div>
   );
@@ -67,9 +67,9 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({ cards }) => {
 
   return (
     <div className="relative w-full">
-      <div className="bg-gray-900/50 backdrop-blur-sm rounded-t-lg p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-lg font-bold text-white">Your Hand</h3>
+      <div className="bg-gray-900/50 backdrop-blur-sm rounded-t-lg p-2 select-none">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-bold text-white">Your Hand</h3>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-400">Cards: {cards.length}</span>
             {!isMyTurn() && (
@@ -78,9 +78,9 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({ cards }) => {
           </div>
         </div>
         
-        <div className="flex gap-2 justify-center overflow-x-auto py-2">
+        <div className="flex gap-2 justify-center overflow-x-auto py-1">
           {cards.length === 0 ? (
-            <div className="text-gray-500 text-center py-8">
+            <div className="text-gray-500 text-center py-4 text-sm">
               No cards in hand
             </div>
           ) : (

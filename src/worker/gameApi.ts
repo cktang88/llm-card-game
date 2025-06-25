@@ -1,109 +1,343 @@
 import { Hono } from "hono";
 import { validator } from "hono/validator";
+import { drizzle } from "drizzle-orm/d1";
+import { eq } from "drizzle-orm";
 import { createGameState } from "../game/models/GameState";
 import { createPlayer } from "../game/models/Player";
 import { GameManager } from "../game/managers/GameManager";
 import { ASHEN_LEGION_CARDS } from "../game/data/ashen-legion-cards";
 import { ASHEN_LEGION_COMMANDERS } from "../game/data/commanders";
+import { gameRooms as gameRoomsTable } from "./db/schema";
+import { SimpleAI } from "./ai/simpleAI";
 
-// In-memory game storage (will be replaced with Durable Objects for production)
-const games = new Map<string, GameManager>();
+// Environment bindings
+type Env = {
+  DB: D1Database;
+};
 
-const gameApi = new Hono();
+const gameApi = new Hono<{ Bindings: Env }>();
 
-// GET /api/games/:id - Get game state
-gameApi.get("/games/:id", (c) => {
-  const gameId = c.req.param("id");
-  const gameManager = games.get(gameId);
+// Helper function to generate 6-digit alphabetic room code
+function generateRoomCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// Helper function to process AI turn
+async function processAITurn(gameManager: GameManager, aiPlayerId: string): Promise<void> {
+  console.log('[AI] Starting AI turn processing');
+  let actionCount = 0;
+  const maxActions = 10; // Prevent infinite loops
   
-  if (!gameManager) {
-    return c.json({ success: false, error: "Game not found" }, 404);
+  while (actionCount < maxActions) {
+    const gameState = gameManager.getGameState();
+    
+    // Check if it's still AI's turn
+    if (gameState.players[gameState.currentPlayerIndex].id !== aiPlayerId) {
+      console.log('[AI] No longer AI turn, stopping');
+      break;
+    }
+    
+    console.log(`[AI] Current phase: ${gameState.phase}, turn: ${gameState.turn}`);
+    
+    // Get AI decision
+    const action = SimpleAI.makeDecision(gameState, aiPlayerId);
+    if (!action) {
+      console.log('[AI] No action decided, stopping');
+      break;
+    }
+    
+    console.log(`[AI] Attempting action: ${action.type}`);
+    
+    // Process the action
+    const success = gameManager.processAction(action);
+    if (!success) {
+      console.log(`[AI] Action failed: ${action.type}`);
+      break;
+    }
+    
+    console.log(`[AI] Action successful: ${action.type}`);
+    
+    // If action was endTurn, we're done
+    if (action.type === 'endTurn') {
+      console.log('[AI] Turn ended');
+      break;
+    }
+    
+    actionCount++;
   }
   
-  return c.json({ 
-    success: true, 
-    gameState: gameManager.getGameState() 
-  });
+  console.log(`[AI] Turn processing complete. Actions taken: ${actionCount}`);
+}
+
+// GET /api/games/room/:roomCode - Get game by room code
+gameApi.get("/games/room/:roomCode", async (c) => {
+  const roomCode = c.req.param("roomCode").toUpperCase();
+  const db = drizzle(c.env.DB, { schema: { gameRoomsTable } });
+  
+  try {
+    const [room] = await db
+      .select()
+      .from(gameRoomsTable)
+      .where(eq(gameRoomsTable.roomCode, roomCode))
+      .limit(1);
+    
+    if (!room) {
+      return c.json({ success: false, error: "Room not found" }, 404);
+    }
+    
+    return c.json({ 
+      success: true, 
+      room: {
+        id: room.id,
+        roomCode: room.roomCode,
+        gameMode: room.gameMode,
+        status: room.status,
+        player1Id: room.player1Id,
+        player2Id: room.player2Id,
+        gameState: JSON.parse(room.gameState)
+      }
+    });
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    return c.json({ success: false, error }, 500);
+  }
 });
 
-// POST /api/games - Create a new game
+// POST /api/games/room - Create a new room
 gameApi.post(
-  "/games",
+  "/games/room",
   validator("json", (value, c) => {
-    const { player1Name, player2Name, player1DeckId, player2DeckId } = value as any;
+    const { playerName, gameMode } = value as { playerName?: string; gameMode?: string };
     
-    if (!player1Name || !player2Name) {
+    if (!playerName) {
       return c.json({
         success: false,
-        error: "Player names are required"
+        error: "Player name is required"
+      }, 400);
+    }
+    
+    if (!gameMode || !['vs_ai', 'multiplayer'].includes(gameMode)) {
+      return c.json({
+        success: false,
+        error: "Invalid game mode"
       }, 400);
     }
     
     return { 
       body: { 
-        player1Name, 
-        player2Name, 
-        player1DeckId: player1DeckId || "default",
-        player2DeckId: player2DeckId || "default"
+        playerName,
+        gameMode
       } 
     };
   }),
   async (c) => {
-    const { player1Name, player2Name } = c.req.valid("json").body;
+    const { playerName, gameMode } = c.req.valid("json").body;
+    const db = drizzle(c.env.DB, { schema: { gameRoomsTable } });
     
-    // For now, use default Ashen Legion decks
+    // Generate unique room code
+    let roomCode: string;
+    let attempts = 0;
+    while (attempts < 10) {
+      roomCode = generateRoomCode();
+      const [existing] = await db
+        .select()
+        .from(gameRoomsTable)
+        .where(eq(gameRoomsTable.roomCode, roomCode))
+        .limit(1);
+      
+      if (!existing) break;
+      attempts++;
+    }
+    
+    if (attempts >= 10) {
+      return c.json({ success: false, error: "Failed to generate unique room code" }, 500);
+    }
+    
+    const gameId = `game-${Date.now()}`;
+    const player1Id = `player-${Date.now()}-1`;
+    
+    // Create player 1
     const deck1 = [...ASHEN_LEGION_CARDS.slice(0, 20)];
-    const deck2 = [...ASHEN_LEGION_CARDS.slice(0, 20)];
-    
-    // Shuffle decks
     for (let i = deck1.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [deck1[i], deck1[j]] = [deck1[j], deck1[i]];
     }
-    for (let i = deck2.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [deck2[i], deck2[j]] = [deck2[j], deck2[i]];
-    }
     
     const player1 = createPlayer(
-      `player-${Date.now()}-1`,
-      player1Name,
+      player1Id,
+      playerName,
       ASHEN_LEGION_COMMANDERS[0],
       deck1
     );
     
-    const player2 = createPlayer(
-      `player-${Date.now()}-2`,
-      player2Name,
-      ASHEN_LEGION_COMMANDERS[1],
-      deck2
-    );
+    let gameState;
+    let player2Id = null;
     
-    const gameId = `game-${Date.now()}`;
-    const gameState = createGameState(gameId, player1, player2);
-    const gameManager = new GameManager(gameState);
-    gameManager.initializeGame();
+    if (gameMode === 'vs_ai') {
+      // Create AI player
+      player2Id = 'ai-player';
+      const deck2 = [...ASHEN_LEGION_CARDS.slice(0, 20)];
+      for (let i = deck2.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck2[i], deck2[j]] = [deck2[j], deck2[i]];
+      }
+      
+      const aiPlayer = createPlayer(
+        player2Id,
+        'AI Opponent',
+        ASHEN_LEGION_COMMANDERS[1],
+        deck2
+      );
+      
+      gameState = createGameState(gameId, player1, aiPlayer);
+      const gameManager = new GameManager(gameState);
+      gameManager.initializeGame();
+      gameState = gameManager.getGameState();
+      
+      // If AI goes first, process its turn
+      if (gameState.currentPlayerIndex === 1) {
+        await processAITurn(gameManager, 'ai-player');
+        gameState = gameManager.getGameState();
+      }
+    } else {
+      // Multiplayer - create placeholder for player 2
+      const emptyPlayer = createPlayer(
+        'waiting-for-player',
+        'Waiting for player...',
+        ASHEN_LEGION_COMMANDERS[1],
+        []
+      );
+      gameState = createGameState(gameId, player1, emptyPlayer);
+    }
     
-    games.set(gameId, gameManager);
-    
-    return c.json({
-      success: true,
-      gameId,
-      player1Id: player1.id,
-      player2Id: player2.id,
-      gameState: gameManager.getGameState()
-    }, 201);
+    // Save to database
+    try {
+      await db.insert(gameRoomsTable).values({
+        id: gameId,
+        roomCode: roomCode!,
+        gameState: JSON.stringify(gameState),
+        player1Id,
+        player2Id,
+        gameMode,
+        status: gameMode === 'vs_ai' ? 'active' : 'waiting'
+      });
+      
+      return c.json({
+        success: true,
+        roomCode: roomCode!,
+        gameId,
+        playerId: player1Id,
+        gameState
+      }, 201);
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      return c.json({ success: false, error }, 500);
+    }
   }
 );
 
-// POST /api/games/:id/actions - Process a game action
+// POST /api/games/room/:roomCode/join - Join an existing room
 gameApi.post(
-  "/games/:id/actions",
+  "/games/room/:roomCode/join",
   validator("json", (value, c) => {
-    const { type, playerId, data } = value as any;
+    const { playerName } = value as { playerName?: string };
+    
+    if (!playerName) {
+      return c.json({
+        success: false,
+        error: "Player name is required"
+      }, 400);
+    }
+    
+    return { body: { playerName } };
+  }),
+  async (c) => {
+    const roomCode = c.req.param("roomCode").toUpperCase();
+    const { playerName } = c.req.valid("json").body;
+    const db = drizzle(c.env.DB, { schema: { gameRoomsTable } });
+    
+    try {
+      // Get the room
+      const [room] = await db
+        .select()
+        .from(gameRoomsTable)
+        .where(eq(gameRoomsTable.roomCode, roomCode))
+        .limit(1);
+      
+      if (!room) {
+        return c.json({ success: false, error: "Room not found" }, 404);
+      }
+      
+      if (room.gameMode !== 'multiplayer') {
+        return c.json({ success: false, error: "This is not a multiplayer room" }, 400);
+      }
+      
+      if (room.status !== 'waiting') {
+        return c.json({ success: false, error: "Room is not available" }, 400);
+      }
+      
+      // Create player 2
+      const player2Id = `player-${Date.now()}-2`;
+      const deck2 = [...ASHEN_LEGION_CARDS.slice(0, 20)];
+      for (let i = deck2.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck2[i], deck2[j]] = [deck2[j], deck2[i]];
+      }
+      
+      const player2 = createPlayer(
+        player2Id,
+        playerName,
+        ASHEN_LEGION_COMMANDERS[1],
+        deck2
+      );
+      
+      // Update game state with real player 2
+      const gameState = JSON.parse(room.gameState);
+      gameState.players[1] = player2;
+      
+      // Initialize game
+      const gameManager = new GameManager(gameState);
+      gameManager.initializeGame();
+      const updatedGameState = gameManager.getGameState();
+      
+      // Update room in database
+      await db
+        .update(gameRoomsTable)
+        .set({
+          gameState: JSON.stringify(updatedGameState),
+          player2Id,
+          status: 'active',
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(gameRoomsTable.id, room.id));
+      
+      return c.json({
+        success: true,
+        roomCode,
+        gameId: room.id,
+        playerId: player2Id,
+        gameState: updatedGameState
+      });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      return c.json({ success: false, error }, 500);
+    }
+  }
+);
+
+// POST /api/games/room/:roomCode/actions - Process a game action
+gameApi.post(
+  "/games/room/:roomCode/actions",
+  validator("json", (value, c) => {
+    const { type, playerId, data } = value as { type?: string; playerId?: string; data?: Record<string, unknown> };
     
     const validActions = ['playUnit', 'deployUnit', 'useCommander', 'drawCard', 'endTurn', 'surrender'];
-    if (!validActions.includes(type)) {
+    if (!type || !validActions.includes(type)) {
       return c.json({
         success: false,
         error: "Invalid action type"
@@ -120,31 +354,78 @@ gameApi.post(
     return { body: { type, playerId, data: data || {} } };
   }),
   async (c) => {
-    const gameId = c.req.param("id");
+    const roomCode = c.req.param("roomCode").toUpperCase();
     const { type, playerId, data } = c.req.valid("json").body;
+    const db = drizzle(c.env.DB, { schema: { gameRoomsTable } });
     
-    const gameManager = games.get(gameId);
-    if (!gameManager) {
-      return c.json({ success: false, error: "Game not found" }, 404);
-    }
-    
-    const success = gameManager.processAction({
-      type: type as any,
-      playerId,
-      data,
-      timestamp: new Date()
-    });
-    
-    if (success) {
+    try {
+      // Get the room
+      const [room] = await db
+        .select()
+        .from(gameRoomsTable)
+        .where(eq(gameRoomsTable.roomCode, roomCode))
+        .limit(1);
+      
+      if (!room) {
+        return c.json({ success: false, error: "Room not found" }, 404);
+      }
+      
+      if (room.status !== 'active') {
+        return c.json({ success: false, error: "Game is not active" }, 400);
+      }
+      
+      // Load game state and process action
+      const gameState = JSON.parse(room.gameState);
+      const gameManager = new GameManager(gameState);
+      
+      const success = gameManager.processAction({
+        type: type as 'playUnit' | 'deployUnit' | 'useCommander' | 'drawCard' | 'endTurn' | 'surrender',
+        playerId,
+        data,
+        timestamp: new Date()
+      });
+      
+      if (!success) {
+        return c.json({
+          success: false,
+          error: "Invalid action or not allowed at this time"
+        }, 400);
+      }
+      
+      let updatedGameState = gameManager.getGameState();
+      
+      // If it's vs AI and it's now AI's turn, process AI turn
+      if (room.gameMode === 'vs_ai') {
+        const currentPlayer = updatedGameState.players[updatedGameState.currentPlayerIndex];
+        console.log(`[API] Current player after action: ${currentPlayer.id}, action was: ${type}`);
+        
+        if (currentPlayer.id === 'ai-player') {
+          console.log('[API] Triggering AI turn');
+          await processAITurn(gameManager, 'ai-player');
+          updatedGameState = gameManager.getGameState();
+        }
+      }
+      
+      // Check if game is over
+      const status = updatedGameState.winner ? 'completed' : 'active';
+      
+      // Save updated game state
+      await db
+        .update(gameRoomsTable)
+        .set({
+          gameState: JSON.stringify(updatedGameState),
+          status,
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(gameRoomsTable.id, room.id));
+      
       return c.json({
         success: true,
-        gameState: gameManager.getGameState()
+        gameState: updatedGameState
       });
-    } else {
-      return c.json({
-        success: false,
-        error: "Invalid action or not allowed at this time"
-      }, 400);
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      return c.json({ success: false, error }, 500);
     }
   }
 );
