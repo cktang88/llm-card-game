@@ -1,5 +1,8 @@
 # TCG game app with Cloudflare Stack
 
+See [./game-rules.md], this is a card game based on morale and reinforcement instead of killing minions directly. There are currently (as of 7/8/2025) some issues with units balancing and attack power vs morale power.
+
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/vite-react-template)
 
 This template provides a minimal setup for building a React application with TypeScript and Vite, designed to run on Cloudflare Workers. This version has been extended into a full-stack game application to showcase a broader range of Cloudflare technologies and modern frontend practices.
